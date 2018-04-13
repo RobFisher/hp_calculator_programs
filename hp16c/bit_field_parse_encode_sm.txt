@@ -1,0 +1,81 @@
+Paste the below mnemonics into the mnemonics field at
+http://www.swissmicros.com/nut_decoder/
+
+LBL A
+HEX
+0
+STO I
+Rv
+LBL B
+x<>I
+11
+
++
+x<>I
+RCL (i)
+x=0
+RTN
+x<>I
+10
+
+-
+x<>I
+GSB F
+STO (i)
+Rv
+GTO B
+LBL F
+x<>y
+ENTER
+ENTER
+R^
+RLn
+LST X
+x<>y
+ENTER
+Rv
+x<>y
+MASKR
+AND
+x<>y
+Rv
+RTN
+LBL E
+HEX
+11
+
+STO I
+0
+LBL C
+RCL (i)
+x<>y
+ENTER
+ENTER
+R^
+MASKR
+ENTER
+LST X
+x<>I
+10
+
+-
+x<>I
+x<>y
+RCL (i)
+AND
+R^
+OR
+x<>I
+11
+
++
+x<>I
+RCL (i)
+x=0
+GTO D
+RLn
+GTO C
+LBL D
+Rv
+RTN
+

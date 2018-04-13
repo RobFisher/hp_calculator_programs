@@ -1,0 +1,176 @@
+Programmable bit field parser and encoder routines for HP16C.
+
+For code that can be pasted into the conversion tool at
+http://www.swissmicros.com/nut_decoder/ see
+hp16c_bit_field_parse_encode_sm.txt.
+
+Parsing bit fields
+==================
+
+The subroutine F reads from Y the left-most X bits, rotating Y by X
+bits and replacing X with the value read.
+
+The main loop in subroutine A reads from registers starting with .1
+the number of bits to store in the next field. Bits are read from left
+to right, respecting the current window size.  These bits are stored
+in register 1. The loop proceeds to read the number of bits specified
+in register .2 and so on, until the number of bits requested is 0,
+when the program returns.
+
+Example:
+To read an MPEG2 transport packet header, set the word length to 32
+and the complement to unsigned.  Store the number of bits in each
+field in registers as follows:
+
+.1 = 8 (for the sync byte)
+.2 = 1 (for the transport error indicator)
+.3 = 1 (for the payload unit start indicator)
+.4 = 1 (for the transport priority)
+.5 = 13 (for the PID)
+.6 = 2 (for the transport scrambling control)
+.7 = 2 (for the adaptaion field control)
+.8 = 4 (for the continuity counter)
+.9 = 0 to indicate that there are no more fields.
+
+Set the window size to 32 bits by pressing DEC 32 [f] WSIZE.
+Store the transport stream header in X, e.g. 47ABCDEF h
+
+Run the program with GSB A
+
+When it terminates, the sync byte (0x47) will be stored in register 1,
+the transport error indicator in register 2, and so on.
+
+Encoding bit fields
+===================
+
+Subroutine E is the inverse of subroutine A. It encodes bit fields
+using the pattern in registers .1 to .F and the data in registers 1 to
+F.
+
+Example:
+To encode a MPEG 2 transport header packet, keep the numbers of bits
+in registers .1 to .9 as in the previous example. Then store the
+values of the fields in registers 1 to 8, for example:
+
+1 = 47h (the sync byte)
+2 = 0
+3 = 0
+4 = 0
+5 = 1fffh (for the null pid)
+6 = 0
+7 = 0
+8 = 12 (for the continuity counter)
+
+Make sure the window size is at least 32 bits.
+Run the program with GSB E. The result will be displayed (in X).
+
+
+
+ Program Code    | Command Text | Comments
+ =================================
+ 000 -           | 
+ 001 - 43,22, A  | [g][LBL] A     /**** Bit field parsing subroutine ****/
+ 002 - 23        | [HEX]
+ 003 - 0         | 0
+ 004 - 44 32     | [STO][I]       register_index = 0
+ 005 - 33        | [R Dn]         X = data_to_parse
+
+ 006 - 43,22, b  | [g][LBL] B     // main loop through registers
+
+ 007 - 42 22     | [f][x~I]       register_index += 0x11 // points to the current
+ 008 - 1         | 1                                     // . register containing
+ 009 - 1         | 1                                     // number of bits in the
+ 010 - 40        | [+]                                   // field
+ 011 - 42 22     | [f][x~I]
+
+ 012 - 45 31     | [RCL][(i)]    X = num_bits_in_field ; Y = data_to_parse
+ 013 - 43 40     | [g][x=0]      if num_bits_in_field == 0
+ 014 - 43 21     | [g][RTN]          return
+
+ 015 - 42 22     | [f][x~I]      register_index -= 0x10 // points to the current
+ 016 - 1         | 1                                    // register in which to
+ 017 - 0         | 0                                    // store field data
+ 018 - 30        | [-]
+ 019 - 42 22     | [f][x~I]
+
+ 020 - 21 F      | [GSB] F       X = read_bits(num_bits_in_field, data_to_parse); Y = remaining_unread_bits
+ 021 - 44 31     | [STO][(i)]    data[register_index] = X
+
+ 022 - 33        | [R Dn]        X = remaining_unread_bits
+ 023 - 22 b      | [GTO] B       // continue around the loop
+
+
+ 024 - 43,22, F  | [g][LBL] F    /**** read_bits subroutine ****/
+
+ 025 - 34        | [x~y]         T = Z = Y = data_to_read
+ 026 - 36        | [ENTER]       // X = num_bits_in_field
+ 027 - 36        | [ENTER]
+ 028 - 43 33     | [g][R Up]
+
+ 029 - 42 E      | [f][RLn]      rotated_data = X = data_to_read << num_bits_in_field // rotated, not shifted
+ 030 - 43 36     | [g][LSTx]     X = num_bits_in_field; Y = rotated_data
+
+ 031 - 34        | [x~y]         T = Y = rotated_data
+ 032 - 36        | [ENTER]
+ 033 - 33        | [R Dn]
+ 034 - 34        | [x~y]
+
+ 035 - 42 8      | [f][MASKR]    mask = X = MASKR(num_bits_in_field)
+ 036 - 42 20     | [f][AND]      bits_read = X = rotated_data & mask; Z = T = rotated_data
+
+ 037 - 34        | [x~y]         Y = Z = rotated_data
+ 038 - 33        | [R Dn]
+
+ 039 - 43 21     | [g][RTN]      // return with X = bits_read, Y = Z = rotated_data, T = original_data
+
+
+ 040 - 43,22, E  | [g][LBL] E    /**** Encode bit field subroutine ****/
+ 041 - 23        | [HEX]
+
+ 042 - 1         | 1             register_index == 0x11 // points to the current
+ 043 - 1         | 1                                    // . register containing
+ 044 - 44 32     | [STO][I]                             // number of bits in field
+
+ 045 - 0         | 0             bit_field = X = 0
+
+ 046 - 43,22, C  | [g][LBL] C    // main loop through registers
+ 047 - 45 31     | [RCL][(i)]    X = num_bits_in_field ; Y = bit_field
+
+ 048 - 34        | [x~y]         T = Z = Y = bit_field
+ 049 - 36        | [ENTER]
+ 050 - 36        | [ENTER]
+ 051 - 43 33     | [g][R Up]
+
+ 052 - 42 8      | [f][MASKR]    Y = mask = MASKR(num_bits_in_field)
+ 053 - 36        | [ENTER]
+ 054 - 43 36     | [g][LSTx]     X = num_bits_in_field // T = Z = bit_field
+
+ 055 - 42 22     | [f][x~I]      register_index -= 10 // points to the current
+ 056 - 1         | 1                                  // register containing the
+ 057 - 0         | 0                                  // value of the next field
+ 058 - 30        | [-]
+ 059 - 42 22     | [f][x~I]
+
+ 060 - 34        | [x~y]         X = mask; Y = num_bits_in_field
+ 061 - 45 31     | [RCL][(i)]    X = field_value; Y = mask; Z =  num_bits_in_field
+ 062 - 42 20     | [f][AND]      field_value = X = field_value & mask; Y = num_bits_in_field; // T = bit_field
+
+ 063 - 43 33     | [g][R Up]     X = bit_field = bit_field | field_value
+ 064 - 42 40     | [f][OR]
+
+ 065 - 42 22     | [f][x~I]      register_index += 0x11 // point to the next . register
+ 066 - 1         | 1                                    // containing number of bits
+ 067 - 1         | 1                                    // in the field
+ 068 - 40        | [+]
+ 069 - 42 22     | [f][x~I]
+
+ 070 - 45 31     | [RCL][(i)]    X = num_bits_in_field
+ 071 - 43 40     | [g][x=0]      if num_bits_in_field == 0
+ 072 - 22 d      | [GTO] D           goto end
+ 073 - 42 E      | [f][RLn]      bit_field <<= num_bits_in_field
+ 074 - 22 C      | [GTO] C       // continue around the loop
+
+ 075 - 43,22, d  | [g][LBL] D    // end
+ 076 - 33        | [R Dn]        X = bit_field
+ 077 - 43 21     | [g][RTN]      return
+ =================================
